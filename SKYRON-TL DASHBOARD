@@ -1,0 +1,474 @@
+#!/usr/bin/env python3
+"""
+SkyRon-TL test flight simulator
+
+Run the GUI: python skyron_tl_simulator.py
+Custom route: python skyron_tl_simulator.py --start 17.7175 83.3166 --dest 28.6139 77.209
+Headless summary: python skyron_tl_simulator.py --headless --dest 13.0827 80.2707
+Save a screenshot: python skyron_tl_simulator.py --snapshot shot.png
+
+Requires: Python 3.9+, numpy, matplotlib (pip install numpy matplotlib)
+The Vizag coastline/landmark layer is a hand-drawn sketch; elsewhere the map is a plain lat/lon grid.
+"""
+import argparse
+import math
+
+import numpy as np
+
+R = 6371008.8
+RAD = math.pi / 180
+DEF_S, DEF_D = (17.7175, 83.3166), (17.7473, 83.3452)
+WPD = [(17.7175, 83.3166), (17.7225, 83.3205), (17.7295, 83.3240),
+(17.7370, 83.3315), (17.7425, 83.3395), (17.7473, 83.3452)]
+LANDMARKS = [("RK Beach", 17.7175, 83.3166), ("Kailasagiri", 17.7473, 83.3452),
+("Kali Temple", 17.7140, 83.3236), ("Submarine Museum", 17.7115, 83.3250),
+("Tenneti Park", 17.7385, 83.3395), ("Vizag Port", 17.696, 83.302)]
+COAST = [(17.695, 83.314), (17.708, 83.322), (17.7175, 83.3255), (17.727, 83.331),
+(17.737, 83.3385), (17.745, 83.3495), (17.752, 83.356), (17.76, 83.364)]
+KAILASAGIRI = (17.7473, 83.3452)
+CARD8 = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+
+----------------------------------------------------------------- geometry
+def hav(a, b):
+f1, f2, dl = a[0] * RAD, b[0] * RAD, (b[1] - a[1]) * RAD
+h = math.sin((f2 - f1) / 2) ** 2 + math.cos(f1) * math.cos(f2) * math.sin(dl / 2) ** 2
+return 2 * R * math.asin(min(1.0, math.sqrt(h)))
+
+def bearing(a, b):
+f1, f2, dl = a[0] * RAD, b[0] * RAD, (b[1] - a[1]) * RAD
+y = math.sin(dl) * math.cos(f2)
+x = math.cos(f1) * math.sin(f2) - math.sin(f1) * math.cos(f2) * math.cos(dl)
+return (math.atan2(y, x) / RAD + 360) % 360
+
+def great_circle(a, b, n):
+f1, l1, f2, l2 = a[0] * RAD, a[1] * RAD, b[0] * RAD, b[1] * RAD
+d = hav(a, b) / R
+if math.sin(d) < 1e-9:
+return [tuple(a), tuple(b)]
+out = []
+for i in range(n + 1):
+f = i / n
+A, B = math.sin((1 - f) * d) / math.sin(d), math.sin(f * d) / math.sin(d)
+x = A * math.cos(f1) * math.cos(l1) + B * math.cos(f2) * math.cos(l2)
+y = A * math.cos(f1) * math.sin(l1) + B * math.cos(f2) * math.sin(l2)
+z = A * math.sin(f1) + B * math.sin(f2)
+out.append((math.atan2(z, math.hypot(x, y)) / RAD, math.atan2(y, x) / RAD))
+return out
+
+def catmull_rom(W, per=20):
+out = []
+for i in range(len(W) - 1):
+p0, p1, p2, p3 = W[max(i - 1, 0)], W[i], W[i + 1], W[min(i + 2, len(W) - 1)]
+for k in range(per):
+t = k / per
+out.append(tuple(0.5 * ((2 * p1[j]) + (-p0[j] + p2[j]) * t
++ (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t * t
++ (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t ** 3) for j in (0, 1)))
+out.append(W[-1])
+return out
+
+def ground_alt(p):
+return 105.0 if hav(p, KAILASAGIRI) < 500 else 5.0
+
+def smooth(x):
+x = min(max(x, 0.0), 1.0)
+return x * x * (3 - 2 * x)
+
+def fmt_time(s):
+s = max(0, round(s))
+h, m, sec = s // 3600, s % 3600 // 60, s % 60
+return f"{h}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
+
+--------------------------------------------------------------- simulation
+class Flight:
+ACC = 1.5
+
+def __init__(self, start, dest):
+    self.set_route(start, dest)
+
+def set_route(self, start, dest):
+    """Fresh mission from `start` to `dest` (resets drone state)."""
+    self.start, self.dest = tuple(start), tuple(dest)
+    self._build(self.start, self.dest)
+    g = ground_alt(self.start)
+    self.t = self.d = self.v = self.vs = 0.0
+    self.alt = self.a0 = g
+    self.bat = 100.0
+    self.pw = 95.0
+    self.hdg = self.at(0)[2]
+    self.cap = max(100.0, 1.3 * (95 + self.vmax * 7) * self.L / self.vmax / 3600)
+    self.hist = {k: [] for k in ("t", "alt", "spd", "bat", "pw")}
+    self.est = self.L / self.vmax + 25
+    self.hi = max(1.0, self.est / 400)
+    self.trail = []
+    self.status, self.log = "STANDBY", []
+    self.note("Route %.2f km%s" % (self.L / 1000,
+              f" - pack auto-sized to {self.cap:.0f} Wh" if self.cap > 100.5 else ""))
+
+def _build(self, a, b):
+    if a == DEF_S and b == DEF_D:
+        self.pts = catmull_rom(WPD)
+    else:
+        self.pts = great_circle(a, b, min(400, max(40, math.ceil(hav(a, b) / 200))))
+    self.cum = [0.0]
+    for i in range(1, len(self.pts)):
+        self.cum.append(self.cum[-1] + hav(self.pts[i - 1], self.pts[i]))
+    self.L = self.cum[-1]
+    self.vmax = 30.0 if self.L > 50000 else 14.0
+    self.ea = ground_alt(b)
+
+def note(self, msg):
+    self.log.append(f"[{fmt_time(self.t)}] {msg}")
+
+def at(self, d):
+    d = min(max(d, 0.0), self.L)
+    i = int(np.searchsorted(self.cum, d))
+    i = min(max(i, 1), len(self.cum) - 1)
+    a, b = self.pts[i - 1], self.pts[i]
+    f = (d - self.cum[i - 1]) / ((self.cum[i] - self.cum[i - 1]) or 1)
+    dl = (b[1] - a[1] + 540) % 360 - 180
+    return (a[0] + (b[0] - a[0]) * f, (a[1] + dl * f + 540) % 360 - 180, bearing(a, b))
+
+@property
+def pos(self):
+    p = self.at(self.d)
+    return p[0], p[1]
+
+def reroute(self, dest):
+    """Change destination mid-flight: new great-circle leg from the current position."""
+    here = self.pos
+    self.dest = tuple(dest)
+    self._build(here, self.dest)
+    self.d, self.a0 = 0.0, self.alt
+    self.est = self.t + self.L / self.vmax + 25
+    self.status = "IN FLIGHT"
+    self.note("REROUTE -> %.4f, %.4f (%.2f km)" % (dest[0], dest[1], self.L / 1000))
+    if (95 + self.vmax * 7) * self.L / self.vmax / 3600 > self.bat / 100 * self.cap:
+        self.note("WARNING: remaining charge may not cover this route")
+
+@property
+def done(self):
+    return self.status in ("MISSION COMPLETE", "BATTERY DEPLETED")
+
+def step(self, dt):
+    if self.done:
+        return
+    L, rem = self.L, self.L - self.d
+    dc, dd = min(0.15 * L, 600), min(0.2 * L, 800)
+    tv = min(self.vmax, self.ACC * (self.t + 1), math.sqrt(2 * self.ACC * max(rem, 0) + 1))
+    if self.d < 40:
+        tv = min(tv, 3 + self.t * 1.2)
+    wind = math.sin(self.t / 7) * 0.4 + math.sin(self.t / 2.3) * 0.15
+    self.v += (tv - self.v) * min(dt * 1.2, 1)
+    self.d = min(L, self.d + max(self.v, 0) * dt)
+    ta = (self.a0 + (145 - self.a0) * smooth(self.d / dc)
+          - (145 - self.ea) * smooth((self.d - (L - dd)) / dd) + math.sin(self.t / 3) * 0.6)
+    na = self.alt + (ta - self.alt) * min(dt * 0.8, 1)
+    self.vs, self.alt = (na - self.alt) / dt, na
+    tgt = self.at(self.d + 15)[2]
+    dh = (tgt - self.hdg + 540) % 360 - 180
+    self.hdg = (self.hdg + dh * min(dt * 1.5, 1) + wind * dt * 2) % 360
+    self.pw = 95 + self.v * 7 + max(self.vs, 0) * 45
+    self.bat = max(0.0, self.bat - self.pw * dt / (self.cap * 36))
+    self.t += dt
+    if self.t >= len(self.hist["t"]) * self.hi:
+        for k, v in zip(("t", "alt", "spd", "bat", "pw"), (self.t, self.alt, self.v, self.bat, self.pw)):
+            self.hist[k].append(v)
+    ph = "CLIMB" if self.d < dc else "DESCENT" if self.d > L - dd else "CRUISE"
+    if self.status in ("IN FLIGHT", "CLIMB", "CRUISE", "DESCENT") and ph != self.status:
+        self.note("Phase: " + ph)
+    if self.bat <= 0 and self.d < L - 1:
+        self.status = "BATTERY DEPLETED"
+        self.note("Battery depleted - emergency landing %.2f km short" % ((L - self.d) / 1000))
+    elif self.d >= L - 0.5:
+        self.status = "MISSION COMPLETE"
+        self.note("Arrived at destination. Battery %.1f%%" % self.bat)
+    else:
+        self.status = ph
+
+def eta(self):
+    if self.done:
+        return 0.0
+    avg = max(self.d / self.t, self.v * 0.8) if self.t > 5 and self.v > 1 else self.vmax * 0.85
+    return (self.L - self.d) / avg if self.t > 0 else self.L / (self.vmax * 0.9) + 8
+def headless(args):
+f = Flight(args.start, args.dest)
+f.status = "IN FLIGHT"
+while not f.done and f.t < 1e7:
+f.step(0.2)
+print("\n".join(f.log))
+print(f"Distance {f.L / 1000:.2f} km | flight time {fmt_time(f.t)} | battery left {f.bat:.1f}% "
+f"| pack {f.cap:.0f} Wh | status {f.status}")
+
+--------------------------------------------------------------------- GUI
+def gui(args):
+import matplotlib
+if args.snapshot:
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from matplotlib.patches import Polygon
+from matplotlib.widgets import Button, TextBox
+
+BG, PANEL, C, B, AMB, GRN, DIM = "#02060d", "#06121f", "#00e5ff", "#1e90ff", "#ffb020", "#2dffa0", "#5f89a8"
+plt.rcParams.update({"font.family": "monospace", "text.color": C, "axes.labelcolor": DIM,
+                     "xtick.color": DIM, "ytick.color": DIM, "axes.edgecolor": "#0d4a6e"})
+fig = plt.figure(figsize=(15.5, 8.6), facecolor=BG)
+try:
+    fig.canvas.manager.set_window_title("SkyRon-TL Flight Simulator")
+except Exception:
+    pass
+fig.text(0.02, 0.955, "SKYRON-TL", fontsize=22, fontweight="bold", color=C)
+fig.text(0.02, 0.928, "TEST FLIGHT SIMULATOR  |  ANY ROUTE", fontsize=9, color=DIM)
+status_t = fig.text(0.98, 0.95, "STANDBY", fontsize=14, fontweight="bold", color=C, ha="right")
+
+ax_map = fig.add_axes([0.26, 0.23, 0.47, 0.70], facecolor="#030b14")
+ax_cmp = fig.add_axes([0.035, 0.36, 0.18, 0.26], projection="polar", facecolor="#030b14")
+ax_g1 = fig.add_axes([0.77, 0.60, 0.165, 0.28], facecolor="#030b14")
+ax_g1b = ax_g1.twinx()
+ax_g2 = fig.add_axes([0.77, 0.25, 0.165, 0.28], facecolor="#030b14")
+ax_g2b = ax_g2.twinx()
+tele_t = fig.text(0.025, 0.89, "", fontsize=10.5, va="top", linespacing=1.55)
+log_t = fig.text(0.26, 0.20, "", fontsize=8, va="top", color="#7fc8e8", linespacing=1.3)
+hdg_t = fig.text(0.125, 0.29, "", fontsize=16, fontweight="bold", ha="center")
+eta_t = fig.text(0.03, 0.17, "", fontsize=11, va="top", linespacing=1.6)
+
+# compass dial
+ax_cmp.set_theta_zero_location("N"); ax_cmp.set_theta_direction(-1)
+ax_cmp.set_xticks(np.radians([0, 90, 180, 270])); ax_cmp.set_xticklabels(["N", "E", "S", "W"], color=C, fontsize=13)
+ax_cmp.set_yticks([]); ax_cmp.set_ylim(0, 1)
+ax_cmp.grid(color="#0d4a6e")
+for a in range(0, 360, 10):
+    ax_cmp.plot([math.radians(a)] * 2, [0.92 if a % 30 else 0.86, 1], color=C, lw=1)
+needle, = ax_cmp.plot([0, 0], [0, 0.8], color=AMB, lw=4, solid_capstyle="round")
+ax_cmp.set_title("HEADING", color=DIM, fontsize=9, pad=14)
+
+for ax, ttl in ((ax_g1, "ALTITUDE vs SPEED"), (ax_g2, "BATTERY USAGE")):
+    ax.set_title(ttl, color=DIM, fontsize=9); ax.grid(color="#0b2a40"); ax.set_xlabel("time (s)", fontsize=8)
+ln_alt, = ax_g1.plot([], [], color=C, lw=2, label="ALT m"); ln_spd, = ax_g1b.plot([], [], color=AMB, lw=2, label="SPD m/s")
+ln_bat, = ax_g2.plot([], [], color=C, lw=2); ln_pw, = ax_g2b.plot([], [], color=AMB, lw=1.5)
+ax_g1.set_ylabel("alt (m)", color=C); ax_g1b.set_ylabel("speed (m/s)", color=AMB)
+ax_g2.set_ylabel("charge (%)", color=C); ax_g2b.set_ylabel("power (W)", color=AMB)
+ax_g2.set_ylim(0, 100)
+for ax in (ax_g1b, ax_g2b):
+    ax.tick_params(colors=DIM)
+
+state = {"fl": Flight(args.start, args.dest), "run": False, "mult": "auto", "view": None}
+drone_glow = [ax_map.plot([], [], "o", color=C, alpha=a, ms=m, zorder=8)[0] for a, m in ((.10, 38), (.2, 26), (.35, 16))]
+drone, = ax_map.plot([], [], marker=(3, 0, 0), color=C, ms=16, mec="white", mew=1, zorder=9)
+trail, = ax_map.plot([], [], color="#aef6ff", lw=2.5, zorder=6)
+
+def to_km(lat, lon):
+    v = state["view"]
+    return ((lon - v["lon"] + 540) % 360 - 180) * v["c"] * 111.32, (lat - v["lat"]) * 111.32
+
+def fit():
+    f = state["fl"]
+    P = f.pts + [f.start] + f.trail[::5]
+    b0 = f.pts[0][1]
+    la = [p[0] for p in P]; lo = [(p[1] - b0 + 540) % 360 - 180 for p in P]
+    cl = (min(la) + max(la)) / 2
+    state["view"] = {"lat": cl, "lon": b0 + (min(lo) + max(lo)) / 2, "c": max(math.cos(cl * RAD), 0.05)}
+
+def draw_static():
+    f = state["fl"]
+    ax_map.clear(); ax_map.set_facecolor("#030b14"); ax_map.set_aspect("equal"); ax_map.grid(color="#0b2a40")
+    ax_map.set_title("ROUTE MAP  |  LIVE OVERLAY", color=DIM, fontsize=9)
+    ax_map.set_xlabel("km east", fontsize=8); ax_map.set_ylabel("km north", fontsize=8)
+    for obj in drone_glow + [drone, trail]:
+        ax_map.add_line(obj) if obj.axes is None else None
+    fit()
+    xy = np.array([to_km(*p) for p in f.pts])
+    pad = max(0.4, 0.18 * max(np.ptp(xy[:, 0]), np.ptp(xy[:, 1])))
+    xs, ys = list(xy[:, 0]), list(xy[:, 1])
+    if state["fl"].trail:
+        t = np.array([to_km(*p) for p in f.trail]); xs += list(t[:, 0]); ys += list(t[:, 1])
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    half = max(max(xs) - min(xs), max(ys) - min(ys)) / 2 + pad
+    ax_map.set_xlim(cx - half * 1.25, cx + half * 1.25); ax_map.set_ylim(cy - half, cy + half)
+    # Vizag layer (only meaningful near Vizag at close zoom)
+    cp = np.array([to_km(*p) for p in COAST])
+    lim = (*ax_map.get_xlim(), *ax_map.get_ylim())
+    near = half < 30 and cp[:, 0].max() > lim[0] and cp[:, 0].min() < lim[1] and cp[:, 1].max() > lim[2] and cp[:, 1].min() < lim[3]
+    state["mode"] = "VIZAG MAP LAYER" if near else "GRID VIEW - NO LOCAL MAP DATA"
+    if near:
+        d = cp[-1] - cp[0]; d /= np.hypot(*d); n = np.array([-d[1], d[0]]) * -1  # right-hand normal (sea side)
+        ext = [cp[0] - (cp[1] - cp[0]) * 80, *cp, cp[-1] + (cp[-1] - cp[-2]) * 80]
+        ax_map.add_patch(Polygon(np.array(ext + [ext[-1] + n * 200, ext[0] + n * 200]), closed=True, fc="#05304f", ec="none", zorder=1))
+        ex = np.array(ext)
+        for lw, al in ((9, .08), (5, .18), (2, 1)):
+            ax_map.plot(ex[:, 0], ex[:, 1], color=C, lw=lw, alpha=al, zorder=2)
+        for name, la, lo in LANDMARKS:
+            x, y = to_km(la, lo)
+            ax_map.plot(x, y, "o", color=B, ms=4, zorder=4)
+            ax_map.annotate(name, (x, y), xytext=(6, 4), textcoords="offset points", color="#7fc8e8", fontsize=7)
+    for lw, al in ((10, .08), (6, .16), (2.5, .9)):         # glowing route
+        ax_map.plot(xy[:, 0], xy[:, 1], color=B, lw=lw, alpha=al, ls="-" if lw > 3 else "--", zorder=5)
+    for p, col, lab in ((f.start, GRN, "START"), (f.dest, AMB, "DEST")):
+        x, y = to_km(*p)
+        ax_map.plot(x, y, "o", mfc="none", mec=col, ms=14, mew=2, zorder=7)
+        ax_map.annotate(lab, (x, y), xytext=(10, -14), textcoords="offset points", color=col, fontsize=8, fontweight="bold")
+    ax_map.set_xlabel("km east", fontsize=8)
+
+def refresh_graphs():
+    f = state["fl"]; h = f.hist
+    tm = max(f.est, f.t * 1.05)
+    ln_alt.set_data(h["t"], h["alt"]); ln_spd.set_data(h["t"], h["spd"])
+    ln_bat.set_data(h["t"], h["bat"]); ln_pw.set_data(h["t"], h["pw"])
+    for ax in (ax_g1, ax_g2):
+        ax.set_xlim(0, tm)
+    ax_g1.set_ylim(0, 180); ax_g1b.set_ylim(0, 40 if f.vmax > 20 else 20); ax_g2b.set_ylim(0, 300)
+
+def update(_):
+    f = state["fl"]
+    if state["run"] and not f.done:
+        m = state["mult"]
+        k = (min(20000, max(1, f.est / 40)) if m == "auto" else float(m)) * 0.05
+        n = max(1, math.ceil(k / 0.2))
+        for _i in range(n):
+            f.step(k / n)
+        lat, lon = f.pos
+        if not f.trail or hav(f.trail[-1], (lat, lon)) > 0.003 * max(f.L, 300):
+            f.trail.append((lat, lon))
+    lat, lon = f.pos
+    x, y = to_km(lat, lon)
+    drone.set_data([x], [y]); drone.set_marker((3, 0, -f.hdg))
+    for g in drone_glow:
+        g.set_data([x], [y])
+    if f.trail:
+        t = np.array([to_km(*p) for p in f.trail] + [(x, y)]); trail.set_data(t[:, 0], t[:, 1])
+    else:
+        trail.set_data([], [])
+    needle.set_data([math.radians(f.hdg)] * 2, [0, 0.8])
+    hdg_t.set_text(f"{round(f.hdg) % 360:03d}  {CARD8[round(f.hdg / 45) % 8]}")
+    status_t.set_text(f.status); status_t.set_color(GRN if f.status in ("CLIMB", "CRUISE", "DESCENT", "IN FLIGHT") else AMB if "DEPL" in f.status else C)
+    tele_t.set_text(
+        f"ALTITUDE      {f.alt:7.0f} m\nSPEED         {f.v:7.1f} m/s\nVERT SPEED    {f.vs:+7.1f} m/s\n"
+        f"DIST LEFT     {(f.L - f.d) / 1000:7.2f} km\nBATTERY       {f.bat:7.1f} %\nVOLTAGE       {21 + 4.2 * f.bat / 100:7.1f} V\n"
+        f"LATITUDE      {abs(lat):7.4f} {'S' if lat < 0 else 'N'}\nLONGITUDE     {abs(lon):7.4f} {'W' if lon < 0 else 'E'}")
+    eta_t.set_text(f"ETA   {fmt_time(f.eta())}\nT+    {fmt_time(f.t)}\nPROG  {f.d / f.L * 100:5.1f} %\n{state.get('mode', '')}")
+    log_t.set_text("\n".join(f.log[-5:][::-1]))
+    refresh_graphs()
+    return ()
+
+# ---- controls
+def mk_box(x, label, val):
+    ax = fig.add_axes([x, 0.045, 0.075, 0.04], facecolor=PANEL)
+    tb = TextBox(ax, label, initial=f"{val:.5f}", color=PANEL, hovercolor="#0a2f4a", label_pad=0.4)
+    tb.label.set_color(DIM); tb.label.set_fontsize(8); tb.text_disp.set_color(C)
+    return tb
+s = state["fl"]
+boxes = [mk_box(0.28, "START lat ", s.start[0]), mk_box(0.40, "lon ", s.start[1]),
+         mk_box(0.52, "DEST lat ", s.dest[0]), mk_box(0.64, "lon ", s.dest[1])]
+mult_ax = fig.add_axes([0.80, 0.045, 0.05, 0.04], facecolor=PANEL)
+mult_tb = TextBox(mult_ax, "SIM x ", initial="auto", color=PANEL, hovercolor="#0a2f4a", label_pad=0.3)
+mult_tb.label.set_color(DIM); mult_tb.label.set_fontsize(8); mult_tb.text_disp.set_color(C)
+
+def read_coords():
+    try:
+        v = [float(b.text) for b in boxes]
+    except ValueError:
+        return None
+    if abs(v[0]) > 90 or abs(v[2]) > 90 or abs(v[1]) > 180 or abs(v[3]) > 180:
+        return None
+    return (v[0], v[1]), (v[2], v[3])
+
+def apply(_=None):
+    c = read_coords(); f = state["fl"]
+    if not c:
+        f.note("Invalid coordinates (lat -90..90, lon -180..180)"); return
+    (s0, d0) = c
+    if hav(s0, d0) < 20:
+        f.note("Start and destination must be 20 m apart"); return
+    live = f.t > 0 and not f.done
+    if live and tuple(s0) == f.start:
+        f.reroute(d0)
+    else:
+        state["fl"] = Flight(s0, d0); state["run"] = False
+    draw_static()
+
+def start(_):
+    f = state["fl"]
+    if not f.done:
+        state["run"] = True
+        if f.t == 0:
+            f.status = "IN FLIGHT"; f.note("Takeoff")
+
+def pause(_):
+    state["run"] = not state["run"]
+    f = state["fl"]
+    if not f.done:
+        f.note("Resumed" if state["run"] else "Paused - hovering")
+
+def reset(_):
+    f = state["fl"]
+    state["fl"] = Flight(f.start, f.dest); state["run"] = False; draw_static()
+
+def default(_):
+    for b, v in zip(boxes, (*DEF_S, *DEF_D)):
+        b.set_val(f"{v:.5f}")
+    state["fl"] = Flight(DEF_S, DEF_D); state["run"] = False; draw_static()
+
+def set_mult(txt):
+    try:
+        state["mult"] = str(max(float(txt), 0.1))
+    except ValueError:
+        state["mult"] = "auto"
+mult_tb.on_submit(set_mult)
+for b in boxes:
+    b.on_submit(lambda _t: apply())
+
+btns = []
+for x, lab, cb in ((0.28, "START", start), (0.36, "PAUSE", pause), (0.44, "RESET", reset), (0.52, "APPLY ROUTE", apply), (0.62, "DEFAULT", default)):
+    ax = fig.add_axes([x, 0.105, 0.075 if lab != "APPLY ROUTE" else 0.095, 0.04])
+    b = Button(ax, lab, color=PANEL, hovercolor="#0a3a5a"); b.label.set_color(C); b.label.set_fontsize(9)
+    for sp in ax.spines.values():
+        sp.set_edgecolor(C)
+    b.on_clicked(cb); btns.append(b)
+
+# click on map: sets destination (shift = start) -- uses key state tracked below
+held = {"shift": False}
+fig.canvas.mpl_connect("key_press_event", lambda e: held.update(shift=True) if e.key == "shift" else None)
+fig.canvas.mpl_connect("key_release_event", lambda e: held.update(shift=False) if e.key == "shift" else None)
+
+def on_click(e):
+    if e.inaxes is not ax_map or e.button != 1:
+        return
+    v = state["view"]
+    lat = v["lat"] + e.ydata / 111.32
+    lon = (v["lon"] + e.xdata / (111.32 * v["c"]) + 540) % 360 - 180
+    i = 0 if held["shift"] else 2
+    boxes[i].set_val(f"{lat:.5f}"); boxes[i + 1].set_val(f"{lon:.5f}")
+    apply()
+fig.canvas.mpl_connect("button_press_event", on_click)
+
+draw_static()
+anim = FuncAnimation(fig, update, interval=50, cache_frame_data=False)
+if args.snapshot:
+    anim._draw_was_started = True
+    state["run"] = True; state["fl"].status = "IN FLIGHT"
+    for _ in range(args.frames):
+        update(0)
+    fig.savefig(args.snapshot, dpi=110, facecolor=BG)
+    print("saved", args.snapshot)
+else:
+    plt.show()
+return anim
+def main():
+ap = argparse.ArgumentParser(description="SkyRon-TL test flight simulator")
+ap.add_argument("--start", nargs=2, type=float, default=list(DEF_S), metavar=("LAT", "LON"))
+ap.add_argument("--dest", nargs=2, type=float, default=list(DEF_D), metavar=("LAT", "LON"))
+ap.add_argument("--headless", action="store_true", help="run without a window and print a summary")
+ap.add_argument("--snapshot", metavar="PNG", help="render a few frames offscreen and save a screenshot")
+ap.add_argument("--frames", type=int, default=120, help="frames to simulate for --snapshot")
+a = ap.parse_args()
+for la, lo in (a.start, a.dest):
+if abs(la) > 90 or abs(lo) > 180:
+ap.error("latitude must be -90..90 and longitude -180..180")
+a.start, a.dest = tuple(a.start), tuple(a.dest)
+if hav(a.start, a.dest) < 20:
+ap.error("start and destination must be at least 20 m apart")
+headless(a) if a.headless else gui(a)
+
+if name == "main":
+main()
