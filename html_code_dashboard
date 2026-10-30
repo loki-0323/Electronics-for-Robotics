@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SkyRon-TL Flight Simulator</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#02060d;--panel:#06121f;--c:#00e5ff;--b:#1e90ff;--dim:#5f89a8;--warn:#ffb020;--ok:#2dffa0}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at 50% 0,#07203a 0,var(--bg) 60%);color:#cfefff;font:13px/1.4 "Segoe UI",system-ui,sans-serif;min-height:100vh}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid #0d3a55;flex-wrap:wrap;gap:8px}
+h1{margin:0;font:700 20px "Courier New",monospace;letter-spacing:4px;color:var(--c);text-shadow:0 0 12px var(--c)}
+h1 small{color:var(--dim);font-size:11px;letter-spacing:2px;display:block;text-shadow:none}
+.pill{padding:4px 14px;border:1px solid var(--c);border-radius:20px;color:var(--c);font:700 12px "Courier New",monospace;letter-spacing:2px;box-shadow:0 0 10px #00e5ff55 inset,0 0 10px #00e5ff44}
+.pill.run{color:var(--ok);border-color:var(--ok);box-shadow:0 0 10px #2dffa044}
+.pill.pause{color:var(--warn);border-color:var(--warn)}
+main{display:grid;grid-template-columns:260px minmax(0,1fr) 340px;gap:12px;padding:12px 18px}
+@media(max-width:1000px){main{grid-template-columns:1fr}}
+.card{background:linear-gradient(160deg,#071a2c,var(--panel));border:1px solid #0d4a6e;border-radius:10px;padding:12px;box-shadow:0 0 18px #00a8ff1f,inset 0 0 20px #00a8ff0d;margin-bottom:12px}
+.card h2{margin:0 0 8px;font:600 11px "Courier New",monospace;letter-spacing:3px;color:var(--dim)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.t{border:1px solid #0d3a55;border-radius:6px;padding:6px 8px;background:#030b14}
+.t span{display:block;font-size:10px;color:var(--dim);letter-spacing:1px}
+.t b{font:700 20px "Courier New",monospace;color:var(--c);text-shadow:0 0 8px #00e5ff88}
+.t b i{font-size:11px;font-style:normal;color:var(--dim);margin-left:2px}
+.wide{grid-column:span 2}
+.t.wide b{font-size:15px}
+#batbar{height:8px;border-radius:4px;background:#0a2336;margin-top:4px;overflow:hidden}
+#batfill{height:100%;width:100%;background:linear-gradient(90deg,var(--b),var(--c));box-shadow:0 0 10px var(--c);transition:width .2s}
+.btns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+button,select{background:#031524;color:var(--c);border:1px solid var(--c);border-radius:6px;padding:9px 4px;font:700 12px "Courier New",monospace;letter-spacing:2px;cursor:pointer;box-shadow:0 0 8px #00e5ff44}
+button:hover{background:#06324d;box-shadow:0 0 16px #00e5ff99}
+button:disabled{opacity:.35;cursor:default;box-shadow:none}
+.eta{display:flex;justify-content:space-between;margin-top:10px;font:700 13px "Courier New",monospace;color:var(--c)}
+.bar{height:6px;background:#0a2336;border-radius:3px;margin-top:8px;overflow:hidden}
+#prog{height:100%;width:0;background:linear-gradient(90deg,var(--b),var(--c));box-shadow:0 0 10px var(--c)}
+#map{width:100%;height:auto;display:block;border-radius:8px;background:#030b14;max-height:78vh}
+.mapwrap{position:relative}
+.hud{position:absolute;left:10px;bottom:10px;font:11px "Courier New",monospace;color:var(--dim);background:#02060dcc;padding:4px 8px;border:1px solid #0d3a55;border-radius:4px}
+canvas{width:100%;height:170px;display:block;background:#030b14;border-radius:6px}
+.lg{font:10px "Courier New",monospace;margin-top:4px;color:var(--dim)}
+.lg b{color:var(--c)}.lg u{text-decoration:none;color:var(--warn)}
+#log{font:11px "Courier New",monospace;color:#7fc8e8;height:92px;overflow:auto}
+#log div{border-bottom:1px solid #0a2336;padding:1px 0}
+.cmp{display:flex;flex-direction:column;align-items:center}
+#hdgtxt{font:700 26px "Courier New",monospace;color:var(--c);text-shadow:0 0 10px var(--c);margin-top:4px}
+.lbl{font:10px "Courier New",monospace;color:var(--dim);letter-spacing:2px;margin:8px 0 4px}
+.row{display:flex;gap:8px;margin-bottom:6px;align-items:center}
+.row button,.row select{flex:1}
+input{flex:1;min-width:0;background:#030b14;color:var(--c);border:1px solid #0d4a6e;border-radius:6px;padding:8px;font:700 13px "Courier New",monospace;outline:none}
+input:focus{border-color:var(--c);box-shadow:0 0 10px #00e5ff77}
+.full{width:100%;margin-bottom:6px;padding:6px;font-size:11px}
+#err{color:#ff6a6a;font:11px "Courier New",monospace;min-height:14px}
+#grid text{stroke:none;fill:#2b6a8c;font:9px "Courier New"}
+.flow{animation:fl 1s linear infinite}@keyframes fl{to{stroke-dashoffset:-14}}
+#map{cursor:crosshair}
+</style></head><body>
+<header>
+ <h1>SKYRON‑TL<small>TEST FLIGHT SIMULATOR · ANY ROUTE</small></h1>
+ <div><span class="pill" id="status">STANDBY</span></div>
+</header>
+<main>
+ <section>
+  <div class="card"><h2>TELEMETRY</h2>
+   <div class="grid2">
+    <div class="t"><span>ALTITUDE</span><b id="alt">0<i>m</i></b></div>
+    <div class="t"><span>GROUND SPEED</span><b id="spd">0.0<i>m/s</i></b></div>
+    <div class="t"><span>VERT SPEED</span><b id="vs">0.0<i>m/s</i></b></div>
+    <div class="t"><span>DIST LEFT</span><b id="rem">0.00<i>km</i></b></div>
+    <div class="t wide"><span>BATTERY <em id="volt" style="float:right;font-style:normal">25.2 V</em></span><b id="bat">100<i>%</i></b><div id="batbar"><div id="batfill"></div></div></div>
+    <div class="t wide"><span>LATITUDE</span><b id="lat">17.7175° N</b></div>
+    <div class="t wide"><span>LONGITUDE</span><b id="lon">83.3166° E</b></div>
+    <div class="t"><span>GPS SATS</span><b id="sat">14</b></div>
+    <div class="t"><span>LINK</span><b id="lnk">98<i>%</i></b></div>
+   </div></div>
+  <div class="card cmp"><h2 style="align-self:flex-start">HEADING</h2>
+   <svg id="compass" viewBox="-110 -110 220 220" width="210" height="210">
+    <defs><filter id="gl"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+    <circle r="100" fill="#030b14" stroke="#00e5ff" stroke-width="1.5" filter="url(#gl)"/>
+    <g id="ring" fill="#00e5ff" font-family="Courier New" font-weight="700" text-anchor="middle"></g>
+    <path d="M0-84 L5-72 L-5-72Z" fill="#ffb020" filter="url(#gl)"/>
+    <path d="M0-26 L12 20 L0 12 L-12 20Z" fill="#00e5ff" filter="url(#gl)"/>
+    <circle r="3" fill="#02060d"/>
+   </svg>
+   <div id="hdgtxt">000° N</div>
+  </div>
+ </section>
+ 
+ <section>
+  <div class="card"><h2>ROUTE MAP · LIVE OVERLAY</h2>
+   <div class="mapwrap">
+    <svg id="map" viewBox="0 0 600 585"><defs>
+     <linearGradient id="sea" x1="0" x2="1"><stop offset="0" stop-color="#05304f"/><stop offset="1" stop-color="#021524"/></linearGradient>
+     <filter id="g2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+     <radialGradient id="hill"><stop offset="0" stop-color="#0b3a44"/><stop offset="1" stop-color="#071c26" stop-opacity="0"/></radialGradient></defs>
+     <rect width="600" height="585" fill="#050f1a"/>
+     <g id="grid" stroke="#0b2a40" stroke-width=".6"></g>
+     <polygon id="sea-p" fill="url(#sea)"/>
+     <polyline id="coast" fill="none" stroke="#00e5ff" stroke-width="2.5" filter="url(#g2)"/>
+     <ellipse id="hillE" rx="55" ry="40" fill="url(#hill)"/>
+     <text x="560" y="540" fill="#1b6d99" font-family="Courier New" font-size="13" text-anchor="end" letter-spacing="4">BAY OF BENGAL</text>
+     <path id="plan" class="flow" fill="none" stroke="#1e90ff" stroke-width="3" stroke-dasharray="8 6" filter="url(#g2)"/><path id="trail0" fill="none" stroke="#00e5ff" stroke-width="3" filter="url(#g2)"/>
+     <path id="trail" fill="none" stroke="#00e5ff" stroke-width="3" filter="url(#g2)"/>
+     <g id="lm" font-family="Courier New" font-size="11" fill="#7fc8e8"></g>
+     <g id="mk"></g><g id="drone"><circle r="30" fill="none" stroke="#00e5ff" stroke-opacity=".5"><animate attributeName="r" values="14;40" dur="1.4s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.4s" repeatCount="indefinite"/></circle>
+ <g filter="url(#g2)" stroke="#00e5ff" stroke-width="2" fill="#02060d"><line x1="-13" y1="-13" x2="13" y2="13"/><line x1="13" y1="-13" x2="-13" y2="13"/>
+ <g transform="translate(-14,-14)"><circle r="8" fill="none" stroke-opacity=".6"/><line x1="-7" x2="7"><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur=".25s" repeatCount="indefinite"/></line></g>
+ <g transform="translate(14,-14)"><circle r="8" fill="none" stroke-opacity=".6"/><line x1="-7" x2="7"><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur=".25s" repeatCount="indefinite"/></line></g>
+ <g transform="translate(-14,14)"><circle r="8" fill="none" stroke-opacity=".6"/><line x1="-7" x2="7"><animateTransform attributeName="transform" type="rotate" from="360" to="0" dur=".25s" repeatCount="indefinite"/></line></g>
+ <g transform="translate(14,14)"><circle r="8" fill="none" stroke-opacity=".6"/><line x1="-7" x2="7"><animateTransform attributeName="transform" type="rotate" from="360" to="0" dur=".25s" repeatCount="indefinite"/></line></g>
+ <rect x="-6" y="-8" width="12" height="16" rx="4" fill="#00e5ff"/></g><path d="M0-34 L7-22 L-7-22Z" fill="#ffb020" filter="url(#g2)"/></g>
+     <text id="dlab" font-family="Courier New" font-size="13" font-weight="700" fill="#00e5ff" stroke="#02060d" stroke-width="3" paint-order="stroke"></text><g transform="translate(560,40)" font-family="Courier New" font-weight="700" fill="#00e5ff" text-anchor="middle"><circle r="18" fill="none" stroke="#0d4a6e"/><path d="M0-14 L4 0 L-4 0Z"/><text y="22" font-size="11">N</text></g>
+    </svg>
+    <div class="hud" id="hud">SCALE ≈ 1 km = 86 px</div>
+   </div></div>
+  <div class="card"><h2>FLIGHT LOG</h2><div id="log"></div></div>
+ </section>
+ 
+ <section>
+  <div class="card"><h2>ROUTE PLANNER</h2>
+   <div class="lbl">START · LAT, LON</div><div class="row"><input id="sLat" inputmode="decimal"><input id="sLon" inputmode="decimal"></div>
+   <select id="sPre" class="full"></select>
+   <div class="lbl">DESTINATION · LAT, LON</div><div class="row"><input id="dLat" inputmode="decimal"><input id="dLon" inputmode="decimal"></div>
+   <select id="dPre" class="full"></select>
+   <div class="row"><button id="bApply">APPLY</button><button id="bDef">DEFAULT</button></div>
+   <div class="row"><span class="lbl" style="margin:0">MAP CLICK SETS</span><select id="pick"><option value="d">DESTINATION</option><option value="s">START</option></select></div>
+   <div id="err"></div></div>
+  <div class="card"><h2>MISSION CONTROL</h2>
+   <div class="btns"><button id="bStart">START</button><button id="bPause" disabled>PAUSE</button><button id="bReset">RESET</button></div>
+   <div style="display:flex;gap:8px;margin-top:8px;align-items:center"><span style="color:var(--dim);font:11px 'Courier New'">SIM SPEED</span>
+    <select id="mult" style="flex:1"><option value="auto" selected>AUTO (~40 s)</option><option value="1">1×</option><option value="10">10×</option><option value="100">100×</option><option value="1000">1000×</option><option value="5000">5000×</option></select></div>
+   <div class="eta"><span>ETA <span id="eta">--:--</span></span><span>T+ <span id="el">00:00</span></span></div>
+   <div class="bar"><div id="prog"></div></div>
+   <div class="lg" style="margin-top:6px">ROUTE · <b id="plen"></b> KM ROUTE · CLICK MAP OR EDIT COORDS TO RE-ROUTE (SHIFT+CLICK = START)</div>
+  </div>
+  <div class="card"><h2>ALTITUDE vs SPEED</h2><canvas id="g1"></canvas>
+   <div class="lg"><b>━ ALT (m)</b> &nbsp; <u>━ SPEED (m/s)</u></div></div>
+  <div class="card"><h2>BATTERY USAGE</h2><canvas id="g2c"></canvas>
+   <div class="lg"><b>━ CHARGE (%)</b> &nbsp; <u>━ POWER DRAW (W)</u></div></div>
+ </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const R=6371008.8,rad=Math.PI/180;
+const hav=(a,b)=>{const f1=a[0]*rad,f2=b[0]*rad,dl=(b[1]-a[1])*rad,h=Math.sin((f2-f1)/2)**2+Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(h)))};
+const brg=(a,b)=>{const f1=a[0]*rad,f2=b[0]*rad,dl=(b[1]-a[1])*rad;return(Math.atan2(Math.sin(dl)*Math.cos(f2),Math.cos(f1)*Math.sin(f2)-Math.sin(f1)*Math.cos(f2)*Math.cos(dl))/rad+360)%360};
+function gc(a,b,n){const f1=a[0]*rad,l1=a[1]*rad,f2=b[0]*rad,l2=b[1]*rad,d=hav(a,b)/R;if(Math.sin(d)<1e-9)return[a.slice(),b.slice()];const o=[];
+ for(let i=0;i<=n;i++){const f=i/n,A=Math.sin((1-f)*d)/Math.sin(d),B=Math.sin(f*d)/Math.sin(d),x=A*Math.cos(f1)*Math.cos(l1)+B*Math.cos(f2)*Math.cos(l2),y=A*Math.cos(f1)*Math.sin(l1)+B*Math.cos(f2)*Math.sin(l2),z=A*Math.sin(f1)+B*Math.sin(f2);o.push([Math.atan2(z,Math.hypot(x,y))/rad,Math.atan2(y,x)/rad])}return o}
+const DEF={s:[17.7175,83.3166],d:[17.7473,83.3452]};
+const WPD=[[17.7175,83.3166],[17.7225,83.3205],[17.7295,83.3240],[17.7370,83.3315],[17.7425,83.3395],[17.7473,83.3452]];
+const LMS=[["RK Beach",17.7175,83.3166],["Kailasagiri",17.7473,83.3452],["Kali Temple",17.7140,83.3236],["Submarine Museum",17.7115,83.3250],["Tenneti Park",17.7385,83.3395],["Vizag Port",17.696,83.302],["Beach Rd",17.7275,83.3290]];
+const CITIES=[["Chennai",13.0827,80.2707],["Hyderabad",17.385,78.4867],["Delhi",28.6139,77.209],["London",51.5074,-0.1278],["New York",40.7128,-74.006],["Tokyo",35.6762,139.6503]];
+const COAST=[[17.695,83.314],[17.708,83.322],[17.7175,83.3255],[17.727,83.331],[17.737,83.3385],[17.745,83.3495],[17.752,83.356],[17.76,83.364]];
+let pts,cum,L,EA=5,V={clat:17.73,clon:83.33,k:.1,c:.95},TR=[],MAPMODE="",VMAX=14,CAP=100,EST=360,HI=1;
+const P=(la,lo)=>[300+(((lo-V.clon+540)%360)-180)*V.c*111320*V.k,292-(la-V.clat)*111320*V.k];
+const gAlt=q=>hav(q,[17.7473,83.3452])<500?105:5;
+function crs(W){const o=[];for(let i=0;i<W.length-1;i++){const p0=W[Math.max(i-1,0)],p1=W[i],p2=W[i+1],p3=W[Math.min(i+2,W.length-1)];
+ for(let k=0;k<20;k++){const t=k/20,t2=t*t,t3=t2*t;o.push([0,1].map(j=>0.5*((2*p1[j])+(-p0[j]+p2[j])*t+(2*p0[j]-5*p1[j]+4*p2[j]-p3[j])*t2+(-p0[j]+3*p1[j]-3*p2[j]+p3[j])*t3)))}}
+ o.push(W[W.length-1]);return o}
+function route(a,b){
+ pts=(a[0]==DEF.s[0]&&a[1]==DEF.s[1]&&b[0]==DEF.d[0]&&b[1]==DEF.d[1])?crs(WPD):gc(a,b,Math.min(400,Math.max(40,Math.ceil(hav(a,b)/200))));
+ cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+hav(pts[i-1],pts[i]));
+ L=cum[cum.length-1];EA=gAlt(b);VMAX=L>50000?30:14;
+ $("plen").textContent=(L/1000).toFixed(L<1e4?2:L<1e5?1:0);fit();drawStatic()}
+function fit(){let la0=90,la1=-90,lo0=1e9,lo1=-1e9;const b0=pts[0][1];
+ [...pts,cfg.s,...TR.filter((_,i)=>i%5==0)].forEach(q=>{const dl=((q[1]-b0+540)%360)-180;la0=Math.min(la0,q[0]);la1=Math.max(la1,q[0]);lo0=Math.min(lo0,dl);lo1=Math.max(lo1,dl)});
+ const cl=(la0+la1)/2,c=Math.max(Math.cos(cl*rad),0.05),ew=Math.max((lo1-lo0)*c*111320,1500),ns=Math.max((la1-la0)*111320,1500);
+ V={clat:cl,clon:b0+(lo0+lo1)/2,c,k:Math.min(440/ew,420/ns)}}
+function drawStatic(){
+ const m=111320*V.k,la0=V.clat+292/m,la1=V.clat-293/m,lo0=V.clon-300/(m*V.c),lo1=V.clon+300/(m*V.c);
+ const st=[.0005,.001,.002,.005,.01,.02,.05,.1,.2,.5,1,2,5,10,20,30,45,90].find(x=>x*m>=70)||90,dg=st<.01?4:st<1?2:0,w=v=>((v+540)%360)-180;let h="";
+ for(let la=Math.ceil(la1/st)*st;la<=la0;la+=st){const y=P(la,V.clon)[1];h+=`<line x1="0" y1="${y}" x2="600" y2="${y}"/><text x="4" y="${y-3}">${la.toFixed(dg)}°</text>`}
+ for(let lo=Math.ceil(lo0/st)*st;lo<=lo1;lo+=st){const x=P(V.clat,lo)[0];h+=`<line x1="${x}" y1="0" x2="${x}" y2="585"/><text x="${x+3}" y="580">${w(lo).toFixed(dg)}°</text>`}
+ $("grid").innerHTML=h;
+ let cs="",sp="",hr=0,lm="";MAPMODE="GRID VIEW · NO LOCAL MAP DATA";
+ const cp=COAST.map(q=>P(...q)),X=cp.map(q=>q[0]),Y=cp.map(q=>q[1]);
+ if(V.k>0.012&&Math.max(...X)>-50&&Math.min(...X)<650&&Math.max(...Y)>-50&&Math.min(...Y)<635){
+  MAPMODE="VIZAG MAP LAYER";
+  const n=(a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1;return[dx/l,dy/l]},d0=n(cp[0],cp[1]),d1=n(cp[6],cp[7]),dm=n(cp[0],cp[7]),nr=[-dm[1]*30000,dm[0]*30000];
+  const es=[cp[0][0]-d0[0]*30000,cp[0][1]-d0[1]*30000],ee=[cp[7][0]+d1[0]*30000,cp[7][1]+d1[1]*30000],line=[es,...cp,ee];
+  cs=line.map(q=>q.join(",")).join(" ");sp=[...line,[ee[0]+nr[0],ee[1]+nr[1]],[es[0]+nr[0],es[1]+nr[1]]].map(q=>q.join(",")).join(" ");hr=1;
+  LMS.forEach(l=>{const q=P(l[1],l[2]);if(q[0]>0&&q[0]<600&&q[1]>0&&q[1]<585)lm+=`<circle cx="${q[0]}" cy="${q[1]}" r="3.5" fill="#1e90ff"/><text x="${q[0]+8}" y="${q[1]+4}">${l[0]}</text>`})}
+ $("coast").setAttribute("points",cs);$("sea-p").setAttribute("points",sp);$("lm").innerHTML=lm;
+ const hp=P(17.7473,83.3452);$("hillE").setAttribute("cx",hp[0]);$("hillE").setAttribute("cy",hp[1]);$("hillE").setAttribute("rx",hr?Math.max(450*V.k,18):0);$("hillE").setAttribute("ry",hr?Math.max(330*V.k,13):0);
+ setMarkers();
+ $("plan").setAttribute("d","M"+pts.map(q=>P(...q).map(v=>v.toFixed(1)).join(",")).join("L"))}
+function at(d){d=Math.min(Math.max(d,0),L);let i=1;while(i<cum.length-1&&cum[i]<d)i++;const f=(d-cum[i-1])/(cum[i]-cum[i-1]||1),a=pts[i-1],b=pts[i],dl=((b[1]-a[1]+540)%360)-180;
+ return{lat:a[0]+(b[0]-a[0])*f,lon:((a[1]+dl*f+540)%360)-180,hdg:brg(a,b),i}}
+// compass ring
+let r="";for(let a=0;a<360;a+=10){const m=a%90==0,l=m?12:(a%30==0?9:5);r+=`<line x1="0" y1="-100" x2="0" y2="${-100+l}" stroke="#00e5ff" stroke-width="${m?2:1}" transform="rotate(${a})"/>`}
+[["N",0],["E",90],["S",180],["W",270]].forEach(([t,a])=>r+=`<text y="-72" font-size="16" fill="${t=='N'?'#ff5a5a':'#00e5ff'}" transform="rotate(${a})">${t}</text>`);
+[["30",30],["60",60],["120",120],["150",150],["210",210],["240",240],["300",300],["330",330]].forEach(([t,a])=>r+=`<text y="-78" font-size="8" fill="#5f89a8" transform="rotate(${a})">${t}</text>`);
+$("ring").innerHTML=r;
+// sim
+const ACC=1.5;
+let S,run=false,landed=false,last=0;
+const H={};
+function reset(){const g0=gAlt(cfg.s);S={t:0,d:0,v:0,alt:g0,a0:g0,vs:0,bat:100,hdg:at(0).hdg};TR=[];CAP=Math.max(100,1.3*(95+VMAX*7)*L/VMAX/3600);EST=L/VMAX+25;HI=Math.max(1,EST/400);H.t=[];H.alt=[];H.spd=[];H.bat=[];H.pw=[];run=false;landed=false;
+ $("bStart").disabled=false;$("bStart").textContent="START";$("bPause").disabled=true;$("bPause").textContent="PAUSE";$("log").innerHTML="";setStatus("STANDBY","");log("SkyRon-TL ready. Route "+(L/1000).toFixed(2)+" km"+(CAP>100.5?" · pack auto-sized to "+Math.round(CAP)+" Wh":""));render();}
+function setStatus(t,c){const s=$("status");s.textContent=t;s.className="pill "+c}
+function log(m){const d=document.createElement("div");d.textContent="["+fmt(S?S.t:0)+"] "+m;$("log").prepend(d)}
+const fmt=s=>{s=Math.max(0,Math.round(s));const h=Math.floor(s/3600);return(h?h+":":"")+String(Math.floor(s%3600/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
+const sm=x=>{x=Math.min(Math.max(x,0),1);return x*x*(3-2*x)};
+let phase="";
+function step(dt){
+ const p=S.d/L,rem=L-S.d,dc=Math.min(0.15*L,600),dd=Math.min(0.2*L,800);
+ let tv=Math.min(VMAX,ACC*(S.t+1)*1.0,Math.sqrt(2*ACC*Math.max(rem,0)+1));
+ if(S.d<40)tv=Math.min(tv,3+S.t*1.2);
+ const wind=Math.sin(S.t/7)*0.4+Math.sin(S.t/2.3)*0.15;
+ S.v+=(tv-S.v)*Math.min(dt*1.2,1);S.d=Math.min(L,S.d+Math.max(S.v,0)*dt);
+ const ta=S.a0+(145-S.a0)*sm(S.d/dc)-(145-EA)*sm((S.d-(L-dd))/dd)+Math.sin(S.t/3)*0.6;
+ const na=S.alt+(ta-S.alt)*Math.min(dt*0.8,1);S.vs=(na-S.alt)/dt;S.alt=na;
+ const tgt=at(S.d+15).hdg;let dh=((tgt-S.hdg+540)%360)-180;S.hdg=(S.hdg+dh*Math.min(dt*1.5,1)+wind*dt*2+360)%360;
+ S.pw=95+S.v*7+Math.max(S.vs,0)*45;S.bat=Math.max(0,S.bat-S.pw*dt/(CAP*36));if(S.bat<=0&&S.d<L-1){run=false;landed=true;$("bStart").disabled=true;$("bPause").disabled=true;setStatus("BATTERY DEPLETED","pause");log("Battery depleted: emergency landing "+((L-S.d)/1000).toFixed(2)+" km short.");return}
+ S.t+=dt;
+ const ph=S.d>=L-1?"LANDED":S.d<dc?"CLIMB":S.d>L-dd?"DESCENT":"CRUISE";
+ if(ph!=phase){phase=ph;log("Phase: "+ph);}
+ if(S.t>=H.t.length*HI){H.t.push(S.t);H.alt.push(S.alt);H.spd.push(S.v);H.bat.push(S.bat);H.pw.push(S.pw)}
+ if(S.d>=L-0.5){run=false;landed=true;$("bStart").disabled=true;$("bPause").disabled=true;setStatus("MISSION COMPLETE","");log("Arrived at destination. Battery "+S.bat.toFixed(1)+"%.")}
+}
+function render(){
+ const pos=at(S.d);
+ $("alt").innerHTML=S.alt.toFixed(0)+"<i>m</i>";$("spd").innerHTML=S.v.toFixed(1)+"<i>m/s</i>";$("vs").innerHTML=(S.vs>=0?"+":"")+S.vs.toFixed(1)+"<i>m/s</i>";
+ $("rem").innerHTML=((L-S.d)/1000).toFixed(2)+"<i>km</i>";$("bat").innerHTML=S.bat.toFixed(0)+"<i>%</i>";$("batfill").style.width=S.bat+"%";
+ $("batfill").style.background=S.bat<20?"#ff5a5a":"";$("volt").textContent=(21+4.2*S.bat/100).toFixed(1)+" V";
+ $("lat").textContent=Math.abs(pos.lat).toFixed(4)+"° "+(pos.lat<0?"S":"N");$("lon").textContent=Math.abs(pos.lon).toFixed(4)+"° "+(pos.lon<0?"W":"E");
+ $("sat").textContent=13+Math.round(Math.sin(S.t/9)*1.5);$("lnk").innerHTML=Math.round(98-S.d/L*14+Math.sin(S.t)*1)+"<i>%</i>";
+ const h=S.hdg,card=["N","NE","E","SE","S","SW","W","NW"][Math.round(h/45)%8];
+ $("ring").setAttribute("transform","rotate("+(-h)+")");$("hdgtxt").textContent=String(Math.round(h)%360).padStart(3,"0")+"° "+card;
+ const[x,y]=P(pos.lat,pos.lon);$("drone").setAttribute("transform",`translate(${x},${y}) rotate(${h}) scale(1.15)`);const dl=$("dlab");dl.setAttribute("x",x+16);dl.setAttribute("y",y-14);dl.textContent=ARR[Math.round(h/45)%8]+" "+card;
+ const lp=TR[TR.length-1];if(!lp||Math.hypot(P(...lp)[0]-x,P(...lp)[1]-y)>3)TR.push([pos.lat,pos.lon]);
+ $("trail").setAttribute("d",TR.length>1?"M"+TR.map(q=>P(...q).map(v=>v.toFixed(1)).join(",")).join("L")+`L${x.toFixed(1)},${y.toFixed(1)}`:"");
+ const avg=S.t>5&&S.v>1?Math.max(S.d/S.t,S.v*0.8):VMAX*0.85;
+ $("eta").textContent=landed?"00:00":(run||S.t>0)?fmt((L-S.d)/avg):fmt(L/(VMAX*0.9)+8);
+ $("el").textContent=fmt(S.t);$("prog").style.width=(S.d/L*100)+"%";
+ $("hud").textContent=`${MAPMODE} · HDG ${Math.round(h)}°`;
+ drawGraphs();
+}
+function plot(cv,series,tmax){
+ const dpr=window.devicePixelRatio||1,w=cv.clientWidth,hh=cv.clientHeight;if(cv.width!=w*dpr){cv.width=w*dpr;cv.height=hh*dpr}
+ const c=cv.getContext("2d");c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,hh);
+ const m={l:30,r:30,t:8,b:18},iw=w-m.l-m.r,ih=hh-m.t-m.b;
+ c.strokeStyle="#0b2a40";c.fillStyle="#5f89a8";c.font="9px Courier New";c.lineWidth=1;
+ for(let i=0;i<=4;i++){const y=m.t+ih*i/4;c.beginPath();c.moveTo(m.l,y);c.lineTo(w-m.r,y);c.stroke()}
+ for(let i=0;i<=4;i++){const x=m.l+iw*i/4;c.fillText(fmt(tmax*i/4),x-10,hh-5)}
+ series.forEach((s,k)=>{c.fillStyle=s.col;c.textAlign=k?"left":"right";for(let i=0;i<=4;i++){c.fillText(Math.round(s.max-(s.max)*i/4),k?w-m.r+3:m.l-3,m.t+ih*i/4+3)}c.textAlign="left";
+  c.strokeStyle=s.col;c.lineWidth=2;c.shadowColor=s.col;c.shadowBlur=8;c.beginPath();
+  s.data.forEach((v,i)=>{const x=m.l+iw*H.t[i]/tmax,y=m.t+ih*(1-v/s.max);i?c.lineTo(x,y):c.moveTo(x,y)});c.stroke();c.shadowBlur=0});
+}
+function drawGraphs(){const tm=Math.max(EST,S.t*1.05);
+ plot($("g1"),[{data:H.alt,max:180,col:"#00e5ff"},{data:H.spd,max:VMAX>20?40:20,col:"#ffb020"}],tm);
+ plot($("g2c"),[{data:H.bat,max:100,col:"#00e5ff"},{data:H.pw,max:300,col:"#ffb020"}],tm)}
+function loop(ts){const dt=Math.min((ts-last)/1000,0.1);last=ts;
+ if(run){const mv=$("mult").value,k=(mv=="auto"?Math.min(20000,Math.max(1,(L/VMAX+25)/40)):+mv)*dt;let n=Math.ceil(k/0.2);for(let i=0;i<n;i++)step(k/n);render()}
+ requestAnimationFrame(loop)}
+$("bStart").onclick=()=>{if(landed)return;run=true;phase="";$("bStart").disabled=true;$("bPause").disabled=false;setStatus("IN FLIGHT","run");log("Takeoff.")};
+$("bPause").onclick=()=>{if(landed)return;run=!run;$("bPause").textContent=run?"PAUSE":"RESUME";setStatus(run?"IN FLIGHT":"PAUSED",run?"run":"pause");log(run?"Resumed.":"Paused. Hovering.")};
+$("bReset").onclick=()=>{route(cfg.s,cfg.d);reset()};
+const ARR=["↑","↗","→","↘","↓","↙","←","↖"];
+let cfg={s:DEF.s.slice(),d:DEF.d.slice()};
+const BND={la:[17.695,17.76],lo:[83.295,83.365]};
+const fv=id=>parseFloat($(id).value),err=m=>{$("err").textContent=m;return false};
+const dist=hav;
+function fill(){$("sLat").value=cfg.s[0].toFixed(5);$("sLon").value=cfg.s[1].toFixed(5);$("dLat").value=cfg.d[0].toFixed(5);$("dLon").value=cfg.d[1].toFixed(5)}
+function setMarkers(){const[sx,sy]=P(...cfg.s),[ex,ey]=P(...cfg.d),t='font-family="Courier New" font-size="11" font-weight="700"';
+$("mk").innerHTML=`<circle cx="${sx}" cy="${sy}" r="7" fill="none" stroke="#2dffa0" stroke-width="2.5" filter="url(#g2)"/><text x="${sx+11}" y="${sy+16}" fill="#2dffa0" ${t}>START</text><circle cx="${ex}" cy="${ey}" r="7" fill="none" stroke="#ffb020" stroke-width="2.5" filter="url(#g2)"/><circle cx="${ex}" cy="${ey}" r="2.5" fill="#ffb020"/><text x="${ex+11}" y="${ey-9}" fill="#ffb020" ${t}>DEST</text>`}
+function apply(){
+ const s=[fv("sLat"),fv("sLon")],d=[fv("dLat"),fv("dLon")];
+ if([...s,...d].some(isNaN))return err("Enter valid numeric coordinates.");
+ if(Math.abs(s[0])>90||Math.abs(d[0])>90||Math.abs(s[1])>180||Math.abs(d[1])>180)return err("Latitude must be −90…90 and longitude −180…180.");
+ const prev=cfg,sc=s[0]!=prev.s[0]||s[1]!=prev.s[1],live=!landed&&S.t>0;
+ const s2=(landed&&!sc)?(q=>[q.lat,q.lon])(at(S.d)):s;
+ if(dist(s2,d)<20)return err("Start and destination must be at least 20 m apart.");
+ if(live&&!sc){const q=at(S.d),here=[q.lat,q.lon];if(dist(here,d)<50)return err("Drone is already within 50 m of that destination.");
+  err("");cfg={s:prev.s,d};fill();setMarkers();
+  
+  route(here,d);S.d=0;S.a0=S.alt;phase="";EST=S.t+L/VMAX+25;if((95+VMAX*7)*L/VMAX/3600>S.bat/100*CAP)log("WARNING: remaining charge may not cover this route");log("REROUTE → "+d[0].toFixed(4)+", "+d[1].toFixed(4)+" · "+(L/1000).toFixed(2)+" km");render();return}
+ err("");cfg={s:s2,d};fill();setMarkers();route(s2,d);reset();log("Route set · "+(L/1000).toFixed(2)+" km")}
+["sLat","sLon","dLat","dLon"].forEach(i=>$(i).addEventListener("change",apply));
+$("bApply").onclick=apply;
+$("bDef").onclick=()=>{cfg={s:DEF.s.slice(),d:DEF.d.slice()};err("");fill();route(cfg.s,cfg.d);reset();log("Default route restored")};
+["sPre","dPre"].forEach(id=>{const e=$(id);e.innerHTML='<option value="">— '+(id=="sPre"?"start":"destination")+' preset —</option>'+[...LMS,...CITIES].map(l=>`<option value="${l[1]},${l[2]}">${l[0]}</option>`).join("");
+ e.onchange=()=>{if(!e.value)return;const[la,lo]=e.value.split(",");const k=id[0];$(k+"Lat").value=la;$(k+"Lon").value=lo;e.selectedIndex=0;apply()}});
+$("map").addEventListener("click",e=>{const r=$("map").getBoundingClientRect(),x=(e.clientX-r.left)/r.width*600,y=(e.clientY-r.top)/r.height*585,k=e.shiftKey?"s":$("pick").value,m=111320*V.k;
+ $(k+"Lat").value=(V.clat-(y-292)/m).toFixed(5);$(k+"Lon").value=((((V.clon+(x-300)/(m*V.c))+540)%360)-180).toFixed(5);apply()});
+window.addEventListener("resize",drawGraphs);
+fill();setMarkers();route(cfg.s,cfg.d);reset();requestAnimationFrame(loop);
+</script></body></html>
+ 
